@@ -140,18 +140,35 @@ app.delete('/api/users/:id', (req, res) => {
   });
 });
 
-// --- 3. SUBSCRIPTIONS ---
+// --- SUBSCRIPTIONS ROUTE (UPDATED FOR ENCRYPTION) ---
 app.get('/api/subscriptions', (req, res) => {
   const page = parseInt(req.query.page) || 1;
+  const search = (req.query.search || '').toLowerCase(); 
   const limit = 10;
-  const offset = (page - 1) * limit;
-  db.query("SELECT COUNT(*) as total FROM users WHERE plan = 'premium'", (err, countResult) => {
+
+  // 1. Fetch ALL premium users to perform decryption-based search
+  db.query("SELECT * FROM users WHERE plan = 'premium'", (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
-    const totalPages = Math.ceil(countResult[0].total / limit) || 1;
-    db.query(`SELECT * FROM users WHERE plan = 'premium' LIMIT ? OFFSET ?`, [limit, offset], (err, results) => {
-      if (err) return res.status(500).json({ error: err.message });
-      const decrypted = results.map(u => ({ ...u, email: decrypt(u.email), transaction_id: decrypt(u.transaction_id) }));
-      res.json({ subscriptions: decrypted, totalPages: totalPages, currentPage: page });
+
+    // 2. Decrypt and Filter by Name OR Email in memory
+    const filteredUsers = results.map(u => ({
+      ...u,
+      email: decrypt(u.email),
+      transaction_id: decrypt(u.transaction_id)
+    })).filter(u => 
+      u.name.toLowerCase().includes(search) || 
+      u.email.toLowerCase().includes(search)
+    );
+
+    // 3. Manually handle pagination on the filtered results
+    const totalPages = Math.ceil(filteredUsers.length / limit) || 1;
+    const offset = (page - 1) * limit;
+    const paginatedUsers = filteredUsers.slice(offset, offset + limit);
+
+    res.json({ 
+      subscriptions: paginatedUsers, 
+      totalPages: totalPages, 
+      currentPage: page 
     });
   });
 });
@@ -212,7 +229,7 @@ app.put('/api/admin/reset-password', (req, res) => {
   });
 });
 
-// FIXED: Banning by ID is more reliable with encryption
+// FIXED: Banning by ID
 app.post('/api/users/ban', (req, res) => {
   const { userId, days } = req.body; 
   const q = "UPDATE users SET ban_until = DATE_ADD(NOW(), INTERVAL ? DAY) WHERE user_id = ?";
@@ -248,4 +265,34 @@ app.get('/api/reports/analytics', (req, res) => {
   });
 });
 
+
+// search bar fix
+app.get('/api/subscriptions', (req, res) => {
+  const page = parseInt(req.query.page) || 1;
+  const search = (req.query.search || '').toLowerCase(); 
+  const limit = 10;
+
+  db.query("SELECT * FROM users WHERE plan = 'premium'", (err, results) => {
+    if (err) return res.status(500).json({ error: err.message });
+
+    const filteredUsers = results.map(u => ({
+      ...u,
+      email: decrypt(u.email),
+      transaction_id: decrypt(u.transaction_id)
+    })).filter(u => 
+      u.name.toLowerCase().includes(search) || 
+      u.email.toLowerCase().includes(search)
+    );
+
+    const totalPages = Math.ceil(filteredUsers.length / limit) || 1;
+    const offset = (page - 1) * limit;
+    const paginatedUsers = filteredUsers.slice(offset, offset + limit);
+
+    res.json({ 
+      subscriptions: paginatedUsers, 
+      totalPages: totalPages, 
+      currentPage: page 
+    });
+  });
+});
 app.listen(5000, () => console.log('Backend running on http://localhost:5000'));

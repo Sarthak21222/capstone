@@ -10,9 +10,7 @@ const Subscriptions = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
 
-  useEffect(() => {
-    fetchStats();
-  }, []);
+  useEffect(() => { fetchStats(); }, []);
 
   useEffect(() => {
     const delayDebounceFn = setTimeout(() => {
@@ -25,24 +23,27 @@ const Subscriptions = () => {
     try {
       const res = await axios.get('http://localhost:5000/api/stats/summary');
       setStats(res.data);
-    } catch (err) { console.error("Stats error:", err); }
+    } catch (err) { console.error(err); }
   };
 
   const fetchSubscriptions = async () => {
     try {
       setLoading(true);
+      // We send the search term here. The backend will now check both Name and Email.
       const res = await axios.get(`http://localhost:5000/api/subscriptions?page=${currentPage}&search=${searchTerm}`);
       setSubs(res.data.subscriptions || []);
       setTotalPages(res.data.totalPages || 1);
-    } catch (err) { console.error("Fetch error:", err); }
-    finally { setLoading(false); }
+    } catch (err) { 
+      console.error(err); 
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   return (
     <div className="p-8 bg-gray-50 min-h-screen font-sans text-gray-800">
       <h1 className="text-3xl font-bold text-gray-900 mb-8">Subscription Management</h1>
 
-      {/* STATS CARDS */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div className="bg-blue-600 p-8 rounded-[2rem] text-white shadow-xl flex items-center justify-between">
           <div>
@@ -60,17 +61,17 @@ const Subscriptions = () => {
         </div>
       </div>
 
-      {/* SEARCH BAR */}
       <div className="relative mb-8">
         <Search className="absolute left-4 top-4 text-gray-400" size={20} />
         <input 
-          type="text" placeholder="Search subscribers by name, email or TRX ID..." 
+          type="text" 
+          placeholder="Search by name or email address..." 
           className="w-full pl-12 pr-4 py-4 border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 shadow-sm transition-all"
-          value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
+          value={searchTerm} 
+          onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
         />
       </div>
 
-      {/* TABLE */}
       <div className="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden">
         <table className="w-full text-left">
           <thead className="bg-gray-50 text-gray-500 text-xs font-bold uppercase tracking-widest">
@@ -108,13 +109,12 @@ const Subscriptions = () => {
                 </tr>
               ))
             ) : (
-              <tr><td colSpan="4" className="text-center py-20 text-gray-400 font-medium">No matching premium subscriptions found.</td></tr>
+              <tr><td colSpan="4" className="text-center py-20 text-gray-400 font-medium">No results found for "{searchTerm}"</td></tr>
             )}
           </tbody>
         </table>
       </div>
 
-      {/* PAGINATION */}
       <div className="flex justify-between items-center mt-8">
         <button disabled={currentPage === 1} onClick={() => setCurrentPage(p => p - 1)} className="px-4 py-2 bg-white border rounded-xl disabled:opacity-30 flex items-center gap-1 font-bold text-gray-600 hover:bg-gray-50 shadow-sm transition-all">
           <ChevronLeft size={16}/> Prev
