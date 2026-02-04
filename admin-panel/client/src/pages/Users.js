@@ -99,11 +99,13 @@ const Users = () => {
     }
   };
 
+  // --- FIXED BAN SUBMIT ---
   const handleBanSubmit = async (e) => {
     e.preventDefault();
     try {
+      // Sending userId instead of email to ensure the backend finds the user
       await axios.post('http://localhost:5000/api/users/ban', { 
-        email: selectedUser.email, 
+        userId: selectedUser.user_id, 
         days: banDays 
       });
       toast.warning(`User banned for ${banDays} days`);
@@ -140,7 +142,7 @@ const Users = () => {
       <div className="relative mb-8">
         <Search className="absolute left-4 top-4 text-gray-400" size={20} />
         <input 
-          type="text" placeholder="Search users by name or email..." 
+          type="text" placeholder="Search users by name..." 
           className="w-full pl-12 pr-4 py-4 border rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 shadow-sm transition-all"
           value={searchTerm} onChange={(e) => { setSearchTerm(e.target.value); setCurrentPage(1); }}
         />
