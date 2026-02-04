@@ -34,13 +34,19 @@ app.post('/api/auth/login', (req, res) => {
 
 app.get('/api/users/:id/details', (req, res) => {
   const userId = req.params.id;
+  
   const userSql = `
     SELECT user_id, name, email, plan, 
     IFNULL(used_tokens, 0) as used_tokens, 
     IFNULL(transaction_id, 'N/A') as transaction_id, 
     ban_until FROM users WHERE user_id = ?`;
 
-  const chatSql = "SELECT message, response, created_at FROM chat_history WHERE user_id = ? ORDER BY created_at DESC";
+  // UPDATED: Added IFNULL to response to prevent empty bubbles
+  const chatSql = `
+    SELECT message, IFNULL(response, 'No response recorded') as response, created_at 
+    FROM chat_history 
+    WHERE user_id = ? 
+    ORDER BY created_at DESC`;
 
   db.query(userSql, [userId], (err, userData) => {
     if (err) return res.status(500).json({ error: "Database error" });
@@ -106,7 +112,7 @@ app.delete('/api/users/:id', (req, res) => {
   });
 });
 
-// --- 3. SUBSCRIPTIONS (Updated to include last_login for Purchase Date) ---
+// --- 3. SUBSCRIPTIONS ---
 app.get('/api/subscriptions', (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const search = req.query.search || ''; 
