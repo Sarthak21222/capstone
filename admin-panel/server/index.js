@@ -96,19 +96,27 @@ app.get('/api/users/:id/details', (req, res) => {
 
 app.get('/api/users', (req, res) => {
   const page = parseInt(req.query.page) || 1;
-  const search = req.query.search || ''; 
+  const search = (req.query.search || '').toLowerCase(); 
   const limit = 10; 
-  const offset = (page - 1) * limit;
-  const searchQuery = `%${search}%`;
 
-  db.query("SELECT COUNT(*) as total FROM users WHERE name LIKE ?", [searchQuery], (err, countResult) => {
+  db.query("SELECT * FROM users", (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
-    const totalPages = Math.ceil(countResult[0].total / limit) || 1;
-    db.query("SELECT * FROM users WHERE name LIKE ? LIMIT ? OFFSET ?", [searchQuery, limit, offset], (err, results) => {
-      if (err) return res.status(500).json({ error: err.message });
-      const decrypted = results.map(u => ({ ...u, email: decrypt(u.email), password: decrypt(u.password), transaction_id: decrypt(u.transaction_id) }));
-      res.json({ users: decrypted, totalPages: totalPages, currentPage: page });
-    });
+
+    const filteredResults = results.map(u => ({
+      ...u,
+      email: decrypt(u.email),
+      password: decrypt(u.password),
+      transaction_id: decrypt(u.transaction_id)
+    })).filter(u => 
+      u.name.toLowerCase().includes(search) || 
+      u.email.toLowerCase().includes(search)
+    );
+
+    const totalPages = Math.ceil(filteredResults.length / limit) || 1;
+    const offset = (page - 1) * limit;
+    const paginated = filteredResults.slice(offset, offset + limit);
+
+    res.json({ users: paginated, totalPages: totalPages, currentPage: page });
   });
 });
 
@@ -140,17 +148,15 @@ app.delete('/api/users/:id', (req, res) => {
   });
 });
 
-// --- SUBSCRIPTIONS ROUTE (UPDATED FOR ENCRYPTION) ---
+// --- 3. SUBSCRIPTIONS (WITH MEMORY SEARCH) ---
 app.get('/api/subscriptions', (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const search = (req.query.search || '').toLowerCase(); 
   const limit = 10;
 
-  // 1. Fetch ALL premium users to perform decryption-based search
   db.query("SELECT * FROM users WHERE plan = 'premium'", (err, results) => {
     if (err) return res.status(500).json({ error: err.message });
 
-    // 2. Decrypt and Filter by Name OR Email in memory
     const filteredUsers = results.map(u => ({
       ...u,
       email: decrypt(u.email),
@@ -160,31 +166,41 @@ app.get('/api/subscriptions', (req, res) => {
       u.email.toLowerCase().includes(search)
     );
 
-    // 3. Manually handle pagination on the filtered results
     const totalPages = Math.ceil(filteredUsers.length / limit) || 1;
     const offset = (page - 1) * limit;
     const paginatedUsers = filteredUsers.slice(offset, offset + limit);
 
-    res.json({ 
-      subscriptions: paginatedUsers, 
-      totalPages: totalPages, 
-      currentPage: page 
-    });
+    res.json({ subscriptions: paginatedUsers, totalPages: totalPages, currentPage: page });
   });
 });
 
-// --- 4. SUPPORT TICKETS ---
+// --- 4. SUPPORT TICKETS (CONNECTED TO USERS TABLE) ---
 app.get('/api/tickets', (req, res) => {
   const page = parseInt(req.query.page) || 1;
   const limit = 8; 
   const offset = (page - 1) * limit;
-  db.query("SELECT COUNT(*) as total FROM tickets", (err, countResult) => {
+
+  // Use JOIN to verify user exists and get their current status
+  const countSql = "SELECT COUNT(*) as total FROM tickets";
+  const dataSql = `
+    SELECT t.*, u.name, u.email as encrypted_email, u.ban_until 
+    FROM tickets t 
+    JOIN users u ON t.user_id = u.user_id 
+    ORDER BY t.ticket_id DESC LIMIT ? OFFSET ?`;
+
+  db.query(countSql, (err, countResult) => {
     if (err) return res.status(500).json({ error: err.message });
     const totalPages = Math.ceil(countResult[0].total / limit) || 1;
-    db.query("SELECT * FROM tickets ORDER BY ticket_id DESC LIMIT ? OFFSET ?", [limit, offset], (err, results) => {
+
+    db.query(dataSql, [limit, offset], (err, results) => {
       if (err) return res.status(500).json({ error: err.message });
-      const decrypted = results.map(t => ({ ...t, user_email: decrypt(t.user_email), message: decrypt(t.message) }));
-      res.json({ tickets: decrypted, totalPages: totalPages, currentPage: page });
+      const processed = results.map(t => ({ 
+        ...t, 
+        user_email: decrypt(t.encrypted_email), 
+        message: decrypt(t.message),
+        isBanned: t.ban_until && new Date(t.ban_until) > new Date()
+      }));
+      res.json({ tickets: processed, totalPages: totalPages, currentPage: page });
     });
   });
 });
@@ -229,7 +245,6 @@ app.put('/api/admin/reset-password', (req, res) => {
   });
 });
 
-// FIXED: Banning by ID
 app.post('/api/users/ban', (req, res) => {
   const { userId, days } = req.body; 
   const q = "UPDATE users SET ban_until = DATE_ADD(NOW(), INTERVAL ? DAY) WHERE user_id = ?";
@@ -265,34 +280,4 @@ app.get('/api/reports/analytics', (req, res) => {
   });
 });
 
-
-// search bar fix
-app.get('/api/subscriptions', (req, res) => {
-  const page = parseInt(req.query.page) || 1;
-  const search = (req.query.search || '').toLowerCase(); 
-  const limit = 10;
-
-  db.query("SELECT * FROM users WHERE plan = 'premium'", (err, results) => {
-    if (err) return res.status(500).json({ error: err.message });
-
-    const filteredUsers = results.map(u => ({
-      ...u,
-      email: decrypt(u.email),
-      transaction_id: decrypt(u.transaction_id)
-    })).filter(u => 
-      u.name.toLowerCase().includes(search) || 
-      u.email.toLowerCase().includes(search)
-    );
-
-    const totalPages = Math.ceil(filteredUsers.length / limit) || 1;
-    const offset = (page - 1) * limit;
-    const paginatedUsers = filteredUsers.slice(offset, offset + limit);
-
-    res.json({ 
-      subscriptions: paginatedUsers, 
-      totalPages: totalPages, 
-      currentPage: page 
-    });
-  });
-});
 app.listen(5000, () => console.log('Backend running on http://localhost:5000'));
